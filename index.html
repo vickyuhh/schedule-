@@ -68,6 +68,16 @@
     <div class="sw-manage"><details id="swAddDetails"><summary>＋ Add assignment manually</summary><form id="swTaskForm" class="section"><div class="inputs2"><label><span class="label">Course</span><select id="swTaskCourse" class="field"></select></label><label><span class="label">Due date (optional)</span><input type="date" id="swTaskDue" class="field"></label></div><label class="label section" for="swTaskTitle">Assignment</label><input id="swTaskTitle" class="field" required maxlength="180" placeholder="Quiz, lesson, project…"><label class="label section" for="swTaskUrl">Assignment link (optional)</label><input id="swTaskUrl" class="field" type="url" placeholder="https://…"><label class="label section" for="swTaskNotes">Notes (optional)</label><input id="swTaskNotes" class="field" maxlength="500" placeholder="Instructions or reminders"><div class="sw-form-actions"><button type="submit" class="btn primary">Add to checklist</button></div></form></details></div>
     <div class="sw-manage"><details id="swCourseDetails"><summary>⚙️ Set up your six courses</summary><p class="sub section">Course links stay in your phone's local storage, not your public GitHub repository.</p><div id="swCourseForms" class="sw-forms"></div><button type="button" id="swSaveCourses" class="btn primary section">Save six courses</button></details></div>
     <div class="sw-manage"><details id="swImportDetails"><summary>📥 Import a weekly checklist from ChatGPT</summary><p class="sub section">On your laptop, have ChatGPT review the six course pages and create a <strong>DAYFLOW_SCHOOLWORK_V1</strong> JSON checklist. Open DayFlow on your phone, paste it below, and import. Your existing completed tasks are preserved when a matching task is re-imported.</p><label for="swImportText" class="label section">Weekly schoolwork JSON</label><textarea id="swImportText" class="field backupbox" rows="7" placeholder='{"format":"DAYFLOW_SCHOOLWORK_V1", "weekStart":"2026-10-26", "courses":[…]}'></textarea><div class="sw-form-actions"><button type="button" id="swImportButton" class="btn primary">Import checklist</button><button type="button" id="swExportButton" class="btn">Copy this week's JSON</button></div></details></div>
+    <div class="sw-manage" id="swScanSetup" style="margin-top:15px">
+  <h3>🔎 Scan all 6 courses — Monday</h3>
+  <p class="small muted">One-time setup on your Mac in Chrome: show the bookmarks bar (⌘⇧B), then drag the purple scanner link below onto it. Stay signed in to WAVA.</p>
+  <div class="sw-form-actions" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <a id="swBookmarklet" class="btn primary" href="#" draggable="true" style="color:white;text-decoration:none;pointer-events:none;opacity:.5">📚 Scan WAVA — drag to bookmarks</a>
+    <button type="button" class="btn" id="swOpenK12">Open WAVA course</button>
+  </div>
+  <div class="hint" id="swScannerReady">Preparing scanner…</div>
+  <p class="hint">Every Monday: open any WAVA course on your laptop → click your saved <strong>Scan WAVA</strong> bookmark → copy the scan JSON. Transfer it to your iPhone using this ChatGPT conversation, then open <strong>Schoolwork → Import weekly checklist</strong> and paste. Review warnings; undated weekly work may need a manual check.</p>
+</div>
     <div id="swStatus" class="sw-status" role="status" aria-live="polite">Your assignments and checkmarks save automatically on this phone. They do not sync from your laptop without a manual import.</div>
   </section>
   <section class="card editor hidden" id="taskEditor"><div class="row between"><h2 id="editorTitle">Add activity</h2><button class="square" type="button" id="closeEditor" aria-label="Close editor">×</button></div><form id="taskForm" style="margin-top:14px"><label class="label" for="taskName">Activity name</label><input id="taskName" class="field" maxlength="70" required placeholder="What will you work on?"><div class="inputs2 section"><label><span class="label">Start</span><input type="time" id="taskStart" class="field" required></label><label><span class="label">End</span><input type="time" id="taskEnd" class="field" required></label></div><div class="section"><label class="label" for="taskKind">Category</label><select id="taskKind" class="field"><option value="trading">📈 Trading education</option><option value="school">📚 Schoolwork</option><option value="social">🎮 Friends / free time</option><option value="health">💪 Exercise / wellness</option><option value="other">☕ Other</option></select></div><div class="section"><label class="label" for="taskNote">Notes (optional)</label><input id="taskNote" class="field" maxlength="140" placeholder="Details"></div><div id="formError" class="warning hidden"></div><div class="dialogactions section"><button type="button" id="cancelEditor" class="btn">Cancel</button><button type="submit" class="btn primary">Save activity</button></div></form></section>
@@ -309,6 +319,7 @@ function importWeek(value){
  if(typeof value!=='string'||value.length>500000)throw Error('JSON is too large');
  let parsed;try{parsed=JSON.parse(value)}catch{throw Error('Paste valid JSON, including its opening and closing braces')}
  if(parsed.format!=='DAYFLOW_SCHOOLWORK_V1'||!validDate(parsed.weekStart)||monday(parsed.weekStart)!==parsed.weekStart||!Array.isArray(parsed.courses)||parsed.courses.length!==6)throw Error('Expected DAYFLOW_SCHOOLWORK_V1 with Monday weekStart and exactly six courses');
+ if(Array.isArray(parsed.scanErrors)&&parsed.scanErrors.length)throw Error('Course scan failed: '+parsed.scanErrors.join('; ')+'. Fix the scan before importing');
  const nextCourses=data.courses.map(c=>({...c})),entries=[],seen=new Set();
  for(let i=0;i<6;i++){
    const src=parsed.courses[i];if(!src||typeof src.name!=='string'||!src.name.trim()||src.name.length>100||!Array.isArray(src.assignments)||src.assignments.length>100)throw Error('Invalid course #'+(i+1));
@@ -316,14 +327,14 @@ function importWeek(value){
    nextCourses[i].name=src.name.trim();if(src.url)nextCourses[i].url=cleanURL(src.url);
    for(const item of src.assignments){
      if(!item||typeof item.title!=='string'||!item.title.trim()||item.title.length>180||item.notes&&String(item.notes).length>500||item.due&&!validDate(item.due))throw Error('Invalid assignment in '+src.name);
-     const row={id:newId(),courseId:'course'+(i+1),title:item.title.trim(),due:item.due||'',url:cleanURL(item.url||''),notes:String(item.notes||''),done:false};
+     const row={id:newId(),courseId:'course'+(i+1),title:item.title.trim(),due:item.due||'',url:cleanURL(item.url||''),notes:String(item.notes||''),done:item.done===true};
      const key=row.courseId+'|'+row.title.toLowerCase()+'|'+row.due;
      if(seen.has(key))continue;seen.add(key);entries.push(row);
    }
  }
  const earlier=(data.weeks[parsed.weekStart]||{tasks:[]}).tasks;
  const progress=new Map(earlier.map(t=>[t.courseId+'|'+t.title.toLowerCase()+'|'+t.due,t.done]));
- entries.forEach(t=>{t.done=!!progress.get(t.courseId+'|'+t.title.toLowerCase()+'|'+t.due)});
+ entries.forEach(t=>{const key=t.courseId+'|'+t.title.toLowerCase()+'|'+t.due;t.done=progress.has(key)?!!progress.get(key):!!t.done});
  const next=structuredClone(data);next.courses=nextCourses;next.weeks[parsed.weekStart]={tasks:entries};
  const cleaned=validateState(next);data=cleaned;week=parsed.weekStart;persist();render();status('✓ Imported '+entries.length+' assignments for the week of '+week+'. Existing matching checkmarks preserved.');
 }
@@ -333,6 +344,20 @@ $('swExportButton').addEventListener('click',async()=>{
  const content=JSON.stringify(obj,null,2);$('swImportText').value=content;
  try{await navigator.clipboard.writeText(content);status('✓ Weekly checklist copied. Paste into ChatGPT to back it up.')}catch(e){status('JSON is shown in the text box; select it and copy manually.')}
 });
+/* This scanner bookmarklet runs on the logged-in course origin, not GitHub Pages. */
+(async function prepareScannerBookmark(){
+ const anchor=$('swBookmarklet'),notice=$('swScannerReady');
+ $('swOpenK12').addEventListener('click',()=>window.open(data.courses[0].url||'https://learn1.k12.com/courses/129111','_blank','noopener'));
+ try{
+  const response=await fetch('./schoolwork-scanner.js',{cache:'no-cache'});
+  if(!response.ok)throw Error('Scanner file unavailable (HTTP '+response.status+')');
+  const source=await response.text();
+  if(!source.startsWith('(function(){')||source.length<4000)throw Error('Scanner file invalid');
+  anchor.setAttribute('href','javascript:'+encodeURIComponent(source));
+  anchor.style.pointerEvents='auto';anchor.style.opacity='1';
+  notice.textContent='Scanner link ready. Drag the purple link onto your Chrome bookmarks bar once. Do not simply click it on DayFlow.';
+ }catch(e){notice.textContent='Scanner setup unavailable: '+e.message+'. Reload after GitHub finishes deploying.'}
+})();
 window.DayFlowSchoolwork={getState:()=>structuredClone(data),validateState,setState:next=>{data=validateState(next);persist();render()}};
 try{const prior=localStorage.getItem(KEY);if(prior)data=validateState(JSON.parse(prior));}catch(e){status('Schoolwork storage could not be restored. Your daily planner is unaffected.',true)}
 if(fillCourseDefaults())persist();
