@@ -211,7 +211,26 @@ const monday=(s)=>{const d=new Date(s+'T12:00:00Z');if(!Number.isFinite(d.getTim
 const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
 const addDays=(s,n)=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
 const validDate=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;
-const make=()=>({version:1,courses:Array.from({length:6},(_,i)=>({id:'course'+(i+1),name:'Course '+(i+1),url:''})),weeks:{}});
+const COURSE_DEFAULTS=[
+{name:'Math',url:'https://learn1.k12.com/courses/129111'},
+{name:'English',url:'https://learn1.k12.com/courses/129235'},
+{name:'Science',url:'https://learn1.k12.com/courses/158861'},
+{name:'Game Design',url:'https://learn1.k12.com/courses/129316'},
+{name:'Art History',url:'https://learn1.k12.com/courses/129414'},
+{name:'P.E.',url:''}
+];
+const make=()=>({version:1,courses:COURSE_DEFAULTS.map((c,i)=>({id:'course'+(i+1),name:c.name,url:c.url})),weeks:{}});
+function fillCourseDefaults(){
+ let changed=false;
+ data.courses.forEach((course,i)=>{
+  const preset=COURSE_DEFAULTS[i];
+  if(!preset)return;
+  const placeholder=course.name==='Course '+(i+1);
+  if(placeholder&&course.name!==preset.name){course.name=preset.name;changed=true}
+  if(!course.url&&preset.url&&(placeholder||course.name===preset.name)){course.url=preset.url;changed=true}
+ });
+ return changed;
+}
 let data=make(),week=monday(today()),sequence=0;
 function status(msg,error=false){const el=$('swStatus');el.textContent=msg;el.style.borderColor=error?'var(--red)':'var(--line)'}
 function cleanURL(v){v=(v||'').trim();if(!v)return '';if(v.length>2000||!/^https:\/\//i.test(v))throw Error('Links must begin with https://');return v}
@@ -316,6 +335,7 @@ $('swExportButton').addEventListener('click',async()=>{
 });
 window.DayFlowSchoolwork={getState:()=>structuredClone(data),validateState,setState:next=>{data=validateState(next);persist();render()}};
 try{const prior=localStorage.getItem(KEY);if(prior)data=validateState(JSON.parse(prior));}catch(e){status('Schoolwork storage could not be restored. Your daily planner is unaffected.',true)}
+if(fillCourseDefaults())persist();
 render();
 })();
 </script>
